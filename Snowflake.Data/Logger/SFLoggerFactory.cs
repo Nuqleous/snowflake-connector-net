@@ -2,8 +2,6 @@
  * Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.
  */
 
-using log4net;
-
 namespace Snowflake.Data.Log
 {
     class SFLoggerFactory
@@ -42,11 +40,11 @@ namespace Snowflake.Data.Log
             if (isLoggerEnabled)
             {
                 // If no logger specified, use the default logger: log4net
-                if (logger == null)
-                {
-                    ILog loggerL = LogManager.GetLogger(typeof(T));
-                    return new Log4NetImpl(loggerL);
-                }
+                //if (logger == null)
+                //{
+                //    ILog loggerL = LogManager.GetLogger(typeof(T));
+                //    return new Log4NetImpl(loggerL);
+                //}
                 return logger;
             }
             // Else, return the empty logger implementation which outputs nothing

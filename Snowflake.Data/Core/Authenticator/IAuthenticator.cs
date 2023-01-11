@@ -152,24 +152,24 @@ namespace Snowflake.Data.Core.Authenticator
             {
                 return new ExternalBrowserAuthenticator(session);
             }
-            else if (type.Equals(KeyPairAuthenticator.AUTH_NAME, StringComparison.InvariantCultureIgnoreCase))
-            {
-                // Get private key path or private key from connection settings
-                if (!session.properties.TryGetValue(SFSessionProperty.PRIVATE_KEY_FILE, out var pkPath) &&
-                    !session.properties.TryGetValue(SFSessionProperty.PRIVATE_KEY, out var pkContent))
-                {
-                    // There is no PRIVATE_KEY_FILE defined, can't authenticate with key-pair
-                    string invalidStringDetail =
-                        "Missing required PRIVATE_KEY_FILE or PRIVATE_KEY for key pair authentication";
-                    var error = new SnowflakeDbException(
-                        SFError.INVALID_CONNECTION_STRING,
-                        new object[] { invalidStringDetail });
-                    logger.Error(error.Message, error);
-                    throw error;
-                }
+            //else if (type.Equals(KeyPairAuthenticator.AUTH_NAME, StringComparison.InvariantCultureIgnoreCase))
+            //{
+            //    // Get private key path or private key from connection settings
+            //    if (!session.properties.TryGetValue(SFSessionProperty.PRIVATE_KEY_FILE, out var pkPath) &&
+            //        !session.properties.TryGetValue(SFSessionProperty.PRIVATE_KEY, out var pkContent))
+            //    {
+            //        // There is no PRIVATE_KEY_FILE defined, can't authenticate with key-pair
+            //        string invalidStringDetail =
+            //            "Missing required PRIVATE_KEY_FILE or PRIVATE_KEY for key pair authentication";
+            //        var error = new SnowflakeDbException(
+            //            SFError.INVALID_CONNECTION_STRING,
+            //            new object[] { invalidStringDetail });
+            //        logger.Error(error.Message, error);
+            //        throw error;
+            //    }
 
-                return new KeyPairAuthenticator(session);
-            }
+            //    return new KeyPairAuthenticator(session);
+            //}
             else if (type.Equals(OAuthAuthenticator.AUTH_NAME, StringComparison.InvariantCultureIgnoreCase))
             {
                 // Get private key path or private key from connection settings

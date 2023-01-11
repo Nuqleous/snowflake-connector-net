@@ -259,8 +259,8 @@ namespace Snowflake.Data.Core
                 return !(authenticatorDefined &&
                         (authenticator.Equals(ExternalBrowserAuthenticator.AUTH_NAME,
                             StringComparison.OrdinalIgnoreCase) ||
-                        authenticator.Equals(KeyPairAuthenticator.AUTH_NAME,
-                            StringComparison.OrdinalIgnoreCase) ||
+                        //authenticator.Equals(KeyPairAuthenticator.AUTH_NAME,
+                        //    StringComparison.OrdinalIgnoreCase) ||
                         authenticator.Equals(OAuthAuthenticator.AUTH_NAME,
                         StringComparison.OrdinalIgnoreCase)));
             }

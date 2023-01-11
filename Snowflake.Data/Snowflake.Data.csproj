@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net472</TargetFrameworks>
+    <TargetFrameworks>net6.0</TargetFrameworks>
     <TargetFrameworks Condition="'$(OS)' != 'Windows_NT'">net6.0</TargetFrameworks>
     <Title>Snowflake.Data</Title>
     <PackageId>Snowflake.Data</PackageId>
@@ -22,24 +22,12 @@
   </PropertyGroup>
 	
   <ItemGroup>
-    <PackageReference Include="AWSSDK.S3" Version="3.7.0.4" />
-    <PackageReference Include="Google.Cloud.Storage.V1" Version="2.5.0" />
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.10.0" />
-    <PackageReference Include="Azure.Storage.Common" Version="12.9.0" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.14.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="log4net" Version="2.0.12" />
-    <PackageReference Include="Portable.BouncyCastle" Version="1.8.10" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.10.2" />
     <PackageReference Include="System.Net.Http.WinHttpHandler" Version="6.0.1" />
     <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
-  </ItemGroup>
-  
-  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
-    <Reference Include="System.Net.Http" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
-    <PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
+	<PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
   </ItemGroup>
   
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">

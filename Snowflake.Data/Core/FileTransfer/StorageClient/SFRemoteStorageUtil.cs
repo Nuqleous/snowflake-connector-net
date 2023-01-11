@@ -28,9 +28,7 @@ namespace Snowflake.Data.Core.FileTransfer
         /// <summary>
         /// Strings to indicate specific storage type. 
         /// </summary>
-        public const string S3_FS = "S3";
         public const string AZURE_FS = "AZURE";
-        public const string GCS_FS = "GCS";
         public const string LOCAL_FS = "LOCAL_FS";
 
         /// <summary>
@@ -58,21 +56,9 @@ namespace Snowflake.Data.Core.FileTransfer
             {
                 throw new NotImplementedException();
             }
-            else if (stageLocationType == S3_FS)
-            {
-                return new SFS3Client(stageInfo,
-                    DEFAULT_MAX_RETRY,
-                    response.parallel,
-                    proxyCredentials
-                    );
-            }
             else if (stageLocationType == AZURE_FS)
             {
                 return new SFSnowflakeAzureClient(stageInfo);
-            }
-            else if (stageLocationType == GCS_FS)
-            {
-                return new SFGCSClient(stageInfo);
             }
             else
             {
