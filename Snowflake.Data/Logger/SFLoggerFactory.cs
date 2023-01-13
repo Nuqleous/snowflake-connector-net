@@ -45,7 +45,7 @@ namespace Snowflake.Data.Log
                 //    ILog loggerL = LogManager.GetLogger(typeof(T));
                 //    return new Log4NetImpl(loggerL);
                 //}
-                return logger;
+                return logger ?? new SFLoggerEmptyImpl(); ;
             }
             // Else, return the empty logger implementation which outputs nothing
             else
