@@ -97,7 +97,7 @@ namespace Snowflake.Data.Client
         internal static bool addConnection(SnowflakeDbConnection conn)
         {
             logger.Debug("SnowflakeDbConnectionPool::addConnection");
-            if (!pooling)
+            if (!pooling || conn.SfSession == null)
                 return false;
             lock (_connectionPoolLock)
             {
