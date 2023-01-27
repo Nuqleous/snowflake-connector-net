@@ -147,7 +147,6 @@ namespace Snowflake.Data.Client
                 {
                     _connectionState = ConnectionState.Closed;
                     taskCompletionSource.SetResult(null);
-                    PostClose();
                 }
                 else
                 {
