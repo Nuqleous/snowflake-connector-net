@@ -115,19 +115,11 @@ namespace Snowflake.Data.Client
         {
             logger.Debug("Close Connection.");
             _connectionState = ConnectionState.Closed;
-            PostClose();
-        }
-
-        internal void PostClose()
-        {
             bool added = SnowflakeDbConnectionPool.addConnection(this);
-            if (!added)
+            if (!added && SfSession != null)
             {
                 SfSession.stopHeartBeatForThisSession();
-                if (SfSession != null)
-                {
-                    SfSession.close();
-                }
+                SfSession.close();
             }
         }
 
@@ -152,6 +144,7 @@ namespace Snowflake.Data.Client
                 {
                     if (_connectionState != ConnectionState.Closed && SfSession != null)
                     {
+                        SfSession.stopHeartBeatForThisSession();
                         SfSession.CloseAsync(cancellationToken).ContinueWith(
                         previousTask =>
                         {
@@ -172,7 +165,6 @@ namespace Snowflake.Data.Client
                                 logger.Debug("Session closed successfully");
                                 taskCompletionSource.SetResult(null);
                                 _connectionState = ConnectionState.Closed;
-                                PostClose();
                             }
                         }, cancellationToken);
                     }
@@ -324,13 +316,13 @@ namespace Snowflake.Data.Client
             try
             {
                 this.Close();
-            } 
+            }
             catch (Exception ex)
             {
                 // Prevent an exception from being thrown when disposing of this object
                 logger.Error("Unable to close connection", ex);
             }
-            
+
             disposed = true;
 
             base.Dispose(disposing);
