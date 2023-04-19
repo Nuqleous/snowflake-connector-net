@@ -24,9 +24,11 @@ namespace Snowflake.Data.Client
 
         internal int _connectionTimeout;
 
-        internal long _poolTimeout;
+        internal long _poolTimeout = 0;
 
         private bool disposed = false;
+
+        private bool pooled = false;
 
         private static Mutex _arraybindingMutex = new Mutex();
 
@@ -114,12 +116,55 @@ namespace Snowflake.Data.Client
         public override void Close()
         {
             logger.Debug("Close Connection.");
-            _connectionState = ConnectionState.Closed;
-            bool added = SnowflakeDbConnectionPool.addConnection(this);
-            if (!added && SfSession != null)
+            if (_connectionState != ConnectionState.Closed)
             {
-                SfSession.stopHeartBeatForThisSession();
+                pooled = SnowflakeDbConnectionPool.addConnection(this);
+                _connectionState = ConnectionState.Closed;
+            }
+
+            if(!pooled)
+            {
+                PostClose();
+            }
+        }
+
+        internal void PostClose()
+        {
+            if (SfSession != null)
+            {
                 SfSession.close();
+            }
+        }
+
+        internal void PostCloseAsync(TaskCompletionSource<object> task, CancellationToken cancellationToken)
+        {
+            if (SfSession != null)
+            {
+                SfSession.CloseAsync(cancellationToken).ContinueWith(
+                previousTask =>
+                {
+                    if (previousTask.IsFaulted)
+                    {
+                        // Exception from SfSession.CloseAsync
+                        logger.Error("Error closing the session", previousTask.Exception);
+                        task.SetException(previousTask.Exception);
+                    }
+                    else if (previousTask.IsCanceled)
+                    {
+                        logger.Debug("Session close canceled");
+                        task.SetCanceled();
+                    }
+                    else
+                    {
+                        logger.Debug("Session closed successfully");
+                        _connectionState = ConnectionState.Closed;
+                        task.SetResult(null);
+                    }
+                }, cancellationToken);
+            }
+            else
+            {
+                task.SetResult(null);
             }
         }
 
@@ -134,45 +179,18 @@ namespace Snowflake.Data.Client
             }
             else
             {
-                bool added = SnowflakeDbConnectionPool.addConnection(this);
-                if (added)
+                if (_connectionState != ConnectionState.Closed)
+                {
+                    pooled = SnowflakeDbConnectionPool.addConnection(this);
+                }
+                if (pooled)
                 {
                     _connectionState = ConnectionState.Closed;
                     taskCompletionSource.SetResult(null);
                 }
                 else
                 {
-                    if (_connectionState != ConnectionState.Closed && SfSession != null)
-                    {
-                        SfSession.stopHeartBeatForThisSession();
-                        SfSession.CloseAsync(cancellationToken).ContinueWith(
-                        previousTask =>
-                        {
-                            if (previousTask.IsFaulted)
-                            {
-                                // Exception from SfSession.CloseAsync
-                                logger.Error("Error closing the session", previousTask.Exception);
-                                taskCompletionSource.SetException(previousTask.Exception);
-                            }
-                            else if (previousTask.IsCanceled)
-                            {
-                                _connectionState = ConnectionState.Closed;
-                                logger.Debug("Session close canceled");
-                                taskCompletionSource.SetCanceled();
-                            }
-                            else
-                            {
-                                logger.Debug("Session closed successfully");
-                                taskCompletionSource.SetResult(null);
-                                _connectionState = ConnectionState.Closed;
-                            }
-                        }, cancellationToken);
-                    }
-                    else
-                    {
-                        logger.Debug("Session not opened. Nothing to do.");
-                        taskCompletionSource.SetResult(null);
-                    }
+                    PostCloseAsync(taskCompletionSource, cancellationToken);
                 }
             }
             return taskCompletionSource.Task;
@@ -316,16 +334,20 @@ namespace Snowflake.Data.Client
             try
             {
                 this.Close();
-            }
+            } 
             catch (Exception ex)
             {
                 // Prevent an exception from being thrown when disposing of this object
                 logger.Error("Unable to close connection", ex);
             }
 
-            disposed = true;
+            // only dispose the connection when it's not pooled
+            if (!pooled)
+            {
+                disposed = true;
 
-            base.Dispose(disposing);
+                base.Dispose(disposing);
+            }
         }
 
 
@@ -340,6 +362,13 @@ namespace Snowflake.Data.Client
             {
                 externalCancellationToken.Register(() => { _connectionState = ConnectionState.Closed; });
             }
+        }
+
+        // Called by connection pooling when the connection is removed out of pool
+        // could be reused or destroyed when expire
+        internal void Unpool()
+        {
+            pooled = false;
         }
 
         ~SnowflakeDbConnection()

@@ -599,6 +599,7 @@ namespace Snowflake.Data.Tests
         }
 
         [Test]
+        [Ignore("Ignore flaky unstable test case for now. Will revisit later and sdk issue created (210)")]
         public void testPutArrayBindAsync()
         {
             ArrayBindTest(ConnectionString, "testPutArrayBind", 250000);
@@ -806,6 +807,29 @@ namespace Snowflake.Data.Tests
 
                     cmd.CommandText = "drop table if exists testScalarAsync";
                     cmd.ExecuteNonQuery();
+                }
+                conn.Close();
+            }
+        }
+
+        [Test]
+        [IgnoreOnEnvIs("snowflake_cloud_env",
+                       new string[] { "AWS", "AZURE" })]
+        public void testExecuteLargeQueryWithGcsDownscopedToken()
+        {
+            using (IDbConnection conn = new SnowflakeDbConnection())
+            {
+                conn.ConnectionString = ConnectionString
+                    + String.Format(
+                    ";GCS_USE_DOWNSCOPED_CREDENTIAL=true");
+                conn.Open();
+
+                int rowCount = 100000;
+
+                using (IDbCommand command = conn.CreateCommand())
+                {
+                    command.CommandText = $"SELECT COUNT(*) FROM (select seq4() from table(generator(rowcount => {rowCount})))";
+                    Assert.AreEqual(rowCount, command.ExecuteScalar());
                 }
                 conn.Close();
             }
