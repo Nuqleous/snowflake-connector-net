@@ -1,0 +1,50 @@
+pr: none
+trigger:
+  branches:
+    include:
+      - master
+  paths:
+    include:
+      - Snowflake.Data/
+      - build/azure-pipelines-nuget.yml
+
+variables:
+  projectPath: "$(Build.SourcesDirectory)/Snowflake.Data/Snowflake.Data.csproj"
+  BuildConfiguration: "Release"
+
+pool:
+  vmImage: ubuntu-22.04
+
+stages:
+  - stage: BuildAndDeploy
+    displayName: Generate Script
+    jobs:
+      - job:
+        displayName: Build and Deploy Nuget Package
+        steps:
+          - task: NuGetAuthenticate@1
+            inputs:
+              forceReinstallCredentialProvider: false
+          - task: UseDotNet@2
+            displayName: "Use dotnet 8"
+            inputs:
+              version: "8.x"
+          - task: DotNetCoreCLI@2
+            displayName: "Build Project"
+            inputs:
+              command: "build"
+              projects: "$(projectPath)"
+              arguments: "--configuration $(BuildConfiguration)"
+          - task: DotNetCoreCLI@2
+            displayName: "Create NuGet package"
+            inputs:
+              command: "pack"
+              packagesToPack: "$(projectPath)"
+              arguments: '--configuration $(buildConfiguration)
+          - task: NuGetCommand@2
+            displayName: "Push to NuGet repo"
+            inputs:
+              command: "push"
+              packagesToPush: "$(Build.ArtifactStagingDirectory)/**/*.nupkg;!$(Build.ArtifactStagingDirectory)/**/*.symbols.nupkg"
+              nuGetFeedType: "internal"
+              publishVstsFeed: "e2b99df5-1908-498c-99e8-adcb6acb12d0/53689387-cc8c-4f61-858a-2d1eae01db0f"
