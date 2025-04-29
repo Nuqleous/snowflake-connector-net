@@ -1,7 +1,3 @@
-﻿/*
- * Copyright (c) 2021 Snowflake Computing Inc. All rights reserved.
- */
-
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
@@ -19,8 +15,8 @@ namespace Snowflake.Data.Core
             ContractResolver = new DefaultContractResolver()
             {
                 NamingStrategy = new DefaultNamingStrategy()
-            }
+            },
+            TypeNameHandling = TypeNameHandling.None
         };
-  
     }
 }

@@ -1,7 +1,4 @@
-﻿/*
- * Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.
- */
-
+﻿using System;
 using Snowflake.Data.Log;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,12 +7,15 @@ namespace Snowflake.Data.Core.Authenticator
 {
     class BasicAuthenticator : BaseAuthenticator, IAuthenticator
     {
-        public static readonly string AUTH_NAME = "snowflake";
+        public const string AUTH_NAME = "snowflake";
         private static readonly SFLogger logger = SFLoggerFactory.GetLogger<BasicAuthenticator>();
 
         internal BasicAuthenticator(SFSession session) : base(session, AUTH_NAME)
         {
         }
+
+        public static bool IsBasicAuthenticator(string authenticator) =>
+            AUTH_NAME.Equals(authenticator, StringComparison.InvariantCultureIgnoreCase);
 
         /// <see cref="IAuthenticator.AuthenticateAsync"/>
         async Task IAuthenticator.AuthenticateAsync(CancellationToken cancellationToken)
@@ -34,6 +34,7 @@ namespace Snowflake.Data.Core.Authenticator
         {
             // Only need to add the password to Data for basic authentication
             data.password = session.properties[SFSessionProperty.PASSWORD];
+            SetSecondaryAuthenticationData(ref data);
         }
     }
 

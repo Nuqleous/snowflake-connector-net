@@ -1,7 +1,3 @@
-﻿/*
- * Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.
- */
-
 using System;
 using Newtonsoft.Json;
 using System.Net.Http;
@@ -14,6 +10,7 @@ namespace Snowflake.Data.Core
 {
     /// <summary>
     /// The RestRequester is responsible to send out a rest request and receive response
+    /// No retry needed here since retry is made in HttpClient.RetryHandler (HttpUtil.cs)
     /// </summary>
     internal interface IRestRequester
     {
@@ -55,45 +52,11 @@ namespace Snowflake.Data.Core
 
         public async Task<T> PostAsync<T>(IRestRequest request, CancellationToken cancellationToken)
         {
-            bool retry = false;
-            int retryCount = 0;
-            var result = default(T);
-            
-            do
+            using (var response = await SendAsync(HttpMethod.Post, request, cancellationToken).ConfigureAwait(false))
             {
-                int backOffInSec = 1;
-                retry = false;
-                try
-                {
-                    //use it for testing only
-                    //bool forceParseError = true;
-                    //if (forceParseError)
-                    //{
-                    //    throw new Exception("json parsing error.");
-                    //}
-                    using (var response = await SendAsync(HttpMethod.Post, request, cancellationToken).ConfigureAwait(false))
-                    {
-                        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        result = JsonConvert.DeserializeObject<T>(json, JsonUtils.JsonSettings);
-                    }
-                }
-                catch (Exception e)
-                {
-                    if (retryCount < HttpUtil.MAX_RETRY)
-                    {
-                        logger.Debug($"PostAsync Exception, retry="+ retryCount);
-                        retry = true;
-                        await Task.Delay(TimeSpan.FromSeconds(backOffInSec), cancellationToken).ConfigureAwait(false);
-                        ++retryCount;
-                        backOffInSec = backOffInSec * 2;
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
-            } while (retry);
-            return result;
+                var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return JsonConvert.DeserializeObject<T>(json, JsonUtils.JsonSettings);
+            }
         }
 
         public T Get<T>(IRestRequest request)
@@ -104,45 +67,11 @@ namespace Snowflake.Data.Core
 
         public async Task<T> GetAsync<T>(IRestRequest request, CancellationToken cancellationToken)
         {
-            bool retry = false;
-            int retryCount = 0;
-            var result = default(T);
-
-            do
+            using (HttpResponseMessage response = await GetAsync(request, cancellationToken).ConfigureAwait(false))
             {
-                int backOffInSec = 1;
-                retry = false;
-                try
-                {
-                    //use it for testing only
-                    //bool forceParseError = true;
-                    //if (forceParseError)
-                    //{
-                    //    throw new Exception("json parsing error.");
-                    //}
-                    using (HttpResponseMessage response = await GetAsync(request, cancellationToken).ConfigureAwait(false))
-                    {
-                        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        result = JsonConvert.DeserializeObject<T>(json, JsonUtils.JsonSettings);
-                    }
-                }
-                catch (Exception e)
-                {
-                    if (retryCount < HttpUtil.MAX_RETRY)
-                    {
-                        logger.Debug($"GetAsync Exception, retry=" + retryCount);
-                        retry = true;
-                        await Task.Delay(TimeSpan.FromSeconds(backOffInSec), cancellationToken).ConfigureAwait(false);
-                        ++retryCount;
-                        backOffInSec = backOffInSec * 2;
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
-            } while (retry);
-            return result;
+                var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return JsonConvert.DeserializeObject<T>(json, JsonUtils.JsonSettings);
+            }
         }
 
         public Task<HttpResponseMessage> GetAsync(IRestRequest request, CancellationToken cancellationToken)
@@ -160,13 +89,16 @@ namespace Snowflake.Data.Core
                                                           IRestRequest request,
                                                           CancellationToken externalCancellationToken)
         {
-            HttpRequestMessage message = request.ToRequestMessage(method);
-            return await SendAsync(message, request.GetRestTimeout(), externalCancellationToken).ConfigureAwait(false);
+            using (HttpRequestMessage message = request.ToRequestMessage(method))
+            {
+                return await SendAsync(message, request.GetRestTimeout(), externalCancellationToken, request.getSid()).ConfigureAwait(false);
+            }
         }
 
         protected virtual async Task<HttpResponseMessage> SendAsync(HttpRequestMessage message,
                                                               TimeSpan restTimeout,
-                                                              CancellationToken externalCancellationToken)
+                                                              CancellationToken externalCancellationToken,
+                                                              string sid="")
         {
             // merge multiple cancellation token
             using (CancellationTokenSource restRequestTimeout = new CancellationTokenSource(restTimeout))
@@ -177,18 +109,26 @@ namespace Snowflake.Data.Core
                     HttpResponseMessage response = null;
                     try
                     {
-                        logger.Debug($"Executing: {message.Method} {message.RequestUri} HTTP/{message.Version}");
+                        logger.Debug($"Executing: {sid} {message.Method} {message.RequestUri} HTTP/{message.Version}");
 
                         response = await _HttpClient
                             .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token)
                             .ConfigureAwait(false);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            logger.Error($"Failed Response: {sid} {message.Method} {message.RequestUri} StatusCode: {(int)response.StatusCode}, ReasonPhrase: '{response.ReasonPhrase}'");
+                        }
+                        else
+                        {
+                            logger.Debug($"Succeeded Response: {sid} {message.Method} {message.RequestUri}");
+                        }
                         response.EnsureSuccessStatusCode();
 
                         return response;
                     }
                     catch (Exception e)
                     {
-                        // Disposing of the response if not null now that we don't need it anymore 
+                        // Disposing of the response if not null now that we don't need it anymore
                         response?.Dispose();
                         if (restRequestTimeout.IsCancellationRequested)
                         {

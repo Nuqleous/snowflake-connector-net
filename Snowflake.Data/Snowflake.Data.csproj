@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0</TargetFrameworks>
-    <TargetFrameworks Condition="'$(OS)' != 'Windows_NT'">net6.0</TargetFrameworks>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+    <TargetFrameworks Condition="'$(OS)' != 'Windows_NT'">net8.0</TargetFrameworks>
     <Title>Nuqleous.Snowflake.Data</Title>
     <PackageId>Nuqleous.Snowflake.Data</PackageId>
     <PackageLicenseUrl>https://github.com/snowflakedb/snowflake-connector-net/blob/master/LICENSE</PackageLicenseUrl>
@@ -11,19 +11,27 @@
     <Description>Snowflake Connector for .NET</Description>
     <Company>Snowflake Computing, Inc</Company>
     <Product>Snowflake Connector for .NET</Product>
-    <Authors>howryu, tchen</Authors>
-    <Copyright>Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.</Copyright>
-    <Version>2.0.23</Version>
+    <Authors>Snowflake</Authors>
+    <Version>4.4.1</Version>
     <DebugType>Full</DebugType>
+    <LangVersion>7.3</LangVersion>
   </PropertyGroup>
-  
   <ItemGroup>
-	  <PackageReference Include="Azure.Storage.Blobs" Version="12.14.1" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.10.2" />
-    <PackageReference Include="System.Net.Http.WinHttpHandler" Version="6.0.1" />
-    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
-	<PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
+    <Compile Remove="Properties\**" />
+    <EmbeddedResource Remove="Properties\**" />
+    <None Remove="Properties\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+      <PackageReference Include="Apache.Arrow" Version="14.0.2" />
+      <PackageReference Include="Azure.Storage.Blobs" Version="12.14.1" />
+      <PackageReference Include="BouncyCastle.Cryptography" Version="2.3.1" />
+      <PackageReference Include="Mono.Unix" Version="7.1.0-final.1.21458.1" />
+      <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+      <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.9.0" />
+      <PackageReference Include="System.Net.Http.WinHttpHandler" Version="6.0.1" />
+      <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
+      <PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
   </ItemGroup>
   
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -35,14 +43,14 @@
     <DebugType>full</DebugType>
     <DebugSymbols>True</DebugSymbols>
   </PropertyGroup>
-  
+
   <PropertyGroup>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <AssemblyVersion>$(Version)</AssemblyVersion>
   </PropertyGroup>
-  
-  <ItemGroup>
-    <Folder Include="Properties\" />
-  </ItemGroup>
+
+  <PropertyGroup>
+    <DefineConstants Condition="'$(DefineAdditionalConstants)' != ''">$(DefineConstants);$(DefineAdditionalConstants)</DefineConstants>
+  </PropertyGroup>
 </Project>

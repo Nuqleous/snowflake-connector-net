@@ -1,243 +1,164 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Collections.Concurrent;
+using System;
 using System.Security;
+using System.Threading;
+using System.Threading.Tasks;
+using Snowflake.Data.Core;
+using Snowflake.Data.Core.Session;
+using Snowflake.Data.Core.Tools;
 using Snowflake.Data.Log;
-using System.Linq;
 
 namespace Snowflake.Data.Client
 {
-    sealed class ConnectionPoolSingleton : IDisposable
+    public class SnowflakeDbConnectionPool
     {
-        private static SFLogger logger = SFLoggerFactory.GetLogger<SnowflakeDbConnection>();
-        private static ConnectionPoolSingleton instance = null;
-        private static readonly object _connectionPoolLock = new object();
+        private static readonly SFLogger s_logger = SFLoggerFactory.GetLogger<SnowflakeDbConnectionPool>();
+        private static readonly Object s_connectionManagerInstanceLock = new Object();
+        private static IConnectionManager s_connectionManager;
+        internal const ConnectionPoolType DefaultConnectionPoolType = ConnectionPoolType.MultipleConnectionPool;
 
-        private List<SnowflakeDbConnection> connectionPool;
-        private int maxPoolSize;
-        private long timeout;
-        private int MAX_POOL_SIZE = 10;
-        private const long TIMEOUT = 3600;
-        private bool pooling = true;
-
-        ConnectionPoolSingleton()
-        {
-            lock (_connectionPoolLock)
-            {
-                connectionPool = new List<SnowflakeDbConnection>();
-                maxPoolSize = MAX_POOL_SIZE;
-                timeout = TIMEOUT;
-            }
-        }
-        ~ConnectionPoolSingleton()
-        {
-            ClearAllPools();
-        }
-
-        public void Dispose()
-        {
-            ClearAllPools();
-        }
-
-        public static ConnectionPoolSingleton Instance
+        internal static IConnectionManager ConnectionManager
         {
             get
             {
-                lock (_connectionPoolLock)
-                {
-                    if(instance == null)
-                    {
-                        instance = new ConnectionPoolSingleton();
-                    }
-                    return instance;
-                }
+                if (s_connectionManager != null)
+                    return s_connectionManager;
+                SetConnectionPoolVersion(DefaultConnectionPoolType, false);
+                return s_connectionManager;
             }
         }
 
-        private void cleanExpiredConnections()
+        internal static SFSession GetSession(string connectionString, SecureString password, SecureString passcode)
         {
-            logger.Debug("ConnectionPool::cleanExpiredConnections");
-            lock (_connectionPoolLock)
-            {
-                long timeNow = DateTimeOffset.Now.ToUnixTimeSeconds();
-
-                foreach (var item in connectionPool.ToList())
-                {
-                    if (item._poolTimeout <= timeNow)
-                    {
-                        connectionPool.Remove(item);
-                        item.Unpool();
-                        // This will call SnowflakeDBConnection.Close()
-                        // Since the state of a pooled connection should be
-                        // Closed, also the poolTimeout is expired as well,
-                        // it won't be pooled again and will be destroyed
-                        item.Dispose();
-                    }
-                }
-            }
+            s_logger.Debug($"SnowflakeDbConnectionPool::GetSession");
+            return ConnectionManager.GetSession(connectionString, password, passcode);
         }
 
-        internal SnowflakeDbConnection getConnection(string connStr)
+        internal static Task<SFSession> GetSessionAsync(string connectionString, SecureString password, SecureString passcode, CancellationToken cancellationToken)
         {
-            logger.Debug("ConnectionPool::getConnection");
-            if (!pooling)
-                return null;
-            lock (_connectionPoolLock)
-            {
-                for (int i = 0; i < connectionPool.Count; i++)
-                {
-                    if (connectionPool[i].ConnectionString.Equals(connStr))
-                    {
-                        SnowflakeDbConnection conn = connectionPool[i];
-                        connectionPool.RemoveAt(i);
-                        conn.Unpool();
-                        long timeNow = DateTimeOffset.Now.ToUnixTimeSeconds();
-                        if (conn._poolTimeout <= timeNow)
-                        {
-                            // This will call SnowflakeDBConnection.Close()
-                            // Since the state of a pooled connection should be
-                            // Closed, also the poolTimeout is expired as well,
-                            // it won't be pooled again and will be destroyed
-                            conn.Dispose();
-                            i--;
-                        }
-                        else
-                        {
-                            return conn;
-                        }
-                    }
-                }
-            }
-            return null;
-        }
-        internal bool addConnection(SnowflakeDbConnection conn)
-        {
-            logger.Debug("ConnectionPool::addConnection");
-            if (!pooling)
-                return false;
-            long timeNow = DateTimeOffset.Now.ToUnixTimeSeconds();
-            // Do not pool connection already expired
-            if ((conn._poolTimeout != 0) && (conn._poolTimeout <= timeNow))
-                return false;
-
-            lock (_connectionPoolLock)
-            {
-                if (connectionPool.Count >= maxPoolSize)
-                {
-                    cleanExpiredConnections();
-                }
-                if (connectionPool.Count >= maxPoolSize)
-                {
-                    // pool is full
-                    return false;
-                }
-
-                // only setup pool timeout at the first time
-                if (conn._poolTimeout == 0)
-                {
-                    conn._poolTimeout = timeNow + timeout;
-                }
-                connectionPool.Add(conn);
-                return true;
-            }
+            s_logger.Debug($"SnowflakeDbConnectionPool::GetSessionAsync");
+            return ConnectionManager.GetSessionAsync(connectionString, password, passcode, cancellationToken);
         }
 
-        internal void ClearAllPools()
+        public static SnowflakeDbSessionPool GetPool(string connectionString, SecureString password)
         {
-            logger.Debug("ConnectionPool::ClearAllPools");
-            lock (_connectionPoolLock)
-            {
-                foreach (SnowflakeDbConnection conn in connectionPool)
-                {
-                    // It's better to always call Dispose to destroy
-                    // the connection as that should release all resources
-                    // It won't trigger pooling as a pooled connection always
-                    // closed.
-                    conn.Unpool();
-                    conn.Dispose();
-                }
-                connectionPool.Clear();
-            }
+            s_logger.Debug($"SnowflakeDbConnectionPool::GetPool");
+            return new SnowflakeDbSessionPool(ConnectionManager.GetPool(connectionString, password));
         }
 
-        public void SetMaxPoolSize(int size)
+        public static SnowflakeDbSessionPool GetPool(string connectionString)
         {
-            maxPoolSize = size;
+            s_logger.Debug($"SnowflakeDbConnectionPool::GetPool");
+            return new SnowflakeDbSessionPool(ConnectionManager.GetPool(connectionString));
         }
 
-        public void SetTimeout(long time)
+        internal static SessionPool GetPoolInternal(string connectionString)
         {
-            timeout = time;
+            s_logger.Debug($"SnowflakeDbConnectionPool::GetPoolInternal");
+            return ConnectionManager.GetPool(connectionString);
         }
 
-        public int GetCurrentPoolSize()
+        internal static bool AddSession(SFSession session)
         {
-            return connectionPool.Count;
+            s_logger.Debug("SnowflakeDbConnectionPool::AddSession");
+            return ConnectionManager.AddSession(session);
         }
 
-        public bool SetPooling(bool isEnable)
+        internal static void ReleaseBusySession(SFSession session)
         {
-            if (pooling == isEnable)
-                return false;
-            pooling = isEnable;
-            if (!pooling)
-            {
-                ClearAllPools();
-            }
-            return true;
-        }
-
-        public bool GetPooling()
-        {
-            return pooling;
-        }
-    }
-    public class SnowflakeDbConnectionPool
-    {
-        private static SFLogger logger = SFLoggerFactory.GetLogger<SnowflakeDbConnection>();
-
-        internal static SnowflakeDbConnection getConnection(string connStr)
-        {
-            logger.Debug("SnowflakeDbConnectionPool::getConnection");
-            return ConnectionPoolSingleton.Instance.getConnection(connStr);
-        }
-
-        internal static bool addConnection(SnowflakeDbConnection conn)
-        {
-            logger.Debug("SnowflakeDbConnectionPool::addConnection");
-            return ConnectionPoolSingleton.Instance.addConnection(conn);
+            s_logger.Debug("SnowflakeDbConnectionPool::ReleaseBusySession");
+            ConnectionManager.ReleaseBusySession(session);
         }
 
         public static void ClearAllPools()
         {
-            logger.Debug("SnowflakeDbConnectionPool::ClearAllPools");
-            ConnectionPoolSingleton.Instance.ClearAllPools();
+            s_logger.Debug("SnowflakeDbConnectionPool::ClearAllPools");
+            ConnectionManager.ClearAllPools();
         }
 
-        public static void SetMaxPoolSize(int size)
+        public static void SetMaxPoolSize(int maxPoolSize)
         {
-            ConnectionPoolSingleton.Instance.SetMaxPoolSize(size);
+            s_logger.Debug("SnowflakeDbConnectionPool::SetMaxPoolSize");
+            ConnectionManager.SetMaxPoolSize(maxPoolSize);
         }
 
-        public static void SetTimeout(long time)
+        public static int GetMaxPoolSize()
         {
-            ConnectionPoolSingleton.Instance.SetTimeout(time);
+            s_logger.Debug("SnowflakeDbConnectionPool::GetMaxPoolSize");
+            return ConnectionManager.GetMaxPoolSize();
+        }
+
+        public static void SetTimeout(long connectionTimeout)
+        {
+            s_logger.Debug("SnowflakeDbConnectionPool::SetTimeout");
+            ConnectionManager.SetTimeout(connectionTimeout);
+        }
+
+        public static long GetTimeout()
+        {
+            s_logger.Debug("SnowflakeDbConnectionPool::GetTimeout");
+            return ConnectionManager.GetTimeout();
         }
 
         public static int GetCurrentPoolSize()
         {
-            return ConnectionPoolSingleton.Instance.GetCurrentPoolSize();
+            s_logger.Debug("SnowflakeDbConnectionPool::GetCurrentPoolSize");
+            return ConnectionManager.GetCurrentPoolSize();
         }
 
         public static bool SetPooling(bool isEnable)
         {
-            return ConnectionPoolSingleton.Instance.SetPooling(isEnable);
+            s_logger.Debug("SnowflakeDbConnectionPool::SetPooling");
+            return ConnectionManager.SetPooling(isEnable);
         }
 
         public static bool GetPooling()
         {
-            return ConnectionPoolSingleton.Instance.GetPooling();
+            s_logger.Debug("SnowflakeDbConnectionPool::GetPooling");
+            return ConnectionManager.GetPooling();
+        }
+
+        public static void SetOldConnectionPoolVersion()
+        {
+            ForceConnectionPoolVersion(ConnectionPoolType.SingleConnectionCache);
+        }
+
+        private static void SetConnectionPoolVersion(ConnectionPoolType requestedPoolType, bool force)
+        {
+            lock (s_connectionManagerInstanceLock)
+            {
+                if (s_connectionManager != null && !force)
+                    return;
+                Diagnostics.LogDiagnostics();
+                s_connectionManager?.ClearAllPools();
+                if (requestedPoolType == ConnectionPoolType.MultipleConnectionPool)
+                {
+                    s_connectionManager = new ConnectionPoolManager();
+                    s_logger.Info("SnowflakeDbConnectionPool - multiple connection pools enabled");
+                }
+                if (requestedPoolType == ConnectionPoolType.SingleConnectionCache)
+                {
+                    s_connectionManager = new ConnectionCacheManager();
+                    s_logger.Warn("SnowflakeDbConnectionPool - connection cache enabled");
+                }
+            }
+        }
+
+        internal static void ForceConnectionPoolVersion(ConnectionPoolType requestedPoolType)
+        {
+            SetConnectionPoolVersion(requestedPoolType, true);
+        }
+
+        internal static ConnectionPoolType GetConnectionPoolVersion()
+        {
+            if (ConnectionManager != null)
+            {
+                switch (ConnectionManager)
+                {
+                    case ConnectionCacheManager _: return ConnectionPoolType.SingleConnectionCache;
+                    case ConnectionPoolManager _: return ConnectionPoolType.MultipleConnectionPool;
+                }
+            }
+            return DefaultConnectionPoolType;
         }
     }
 }

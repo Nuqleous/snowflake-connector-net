@@ -1,7 +1,3 @@
-﻿/*
- * Copyright (c) 2021 Snowflake Computing Inc. All rights reserved.
- */
-
 using Newtonsoft.Json;
 using Snowflake.Data.Client;
 using Snowflake.Data.Core;
@@ -15,6 +11,8 @@ namespace Snowflake.Data.Tests.Mock
 
     class MockRetryUntilRestTimeoutRestRequester : RestRequester, IMockRestRequester
     {
+        internal bool _forceTimeoutForNonLoginRequestsOnly = false;
+
         public MockRetryUntilRestTimeoutRestRequester() : base(null)
         {
             // Does nothing
@@ -27,10 +25,20 @@ namespace Snowflake.Data.Tests.Mock
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage message,
                                                               TimeSpan restTimeout,
-                                                              CancellationToken externalCancellationToken)
+                                                              CancellationToken externalCancellationToken,
+                                                              string sid = "")
         {
-            // Override the http timeout and set to 1ms to force all http request to timeout and retry
-            message.Properties[BaseRestRequest.HTTP_REQUEST_TIMEOUT_KEY] = TimeSpan.FromMilliseconds(1);
+            if (!_forceTimeoutForNonLoginRequestsOnly ||
+                _forceTimeoutForNonLoginRequestsOnly && !message.RequestUri.AbsolutePath.Equals(RestPath.SF_LOGIN_PATH))
+            {
+                // Override the http timeout and set to 1ms to force all http request to timeout and retry
+                // Disable warning as this is the way to be compliant with netstandard2.0
+                // API reference: https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httprequestmessage?view=netstandard-2.0
+#pragma warning disable CS0618 // Type or member is obsolete
+                message.Properties[BaseRestRequest.HTTP_REQUEST_TIMEOUT_KEY] = TimeSpan.FromTicks(0);
+#pragma warning restore CS0618 // Type or member is obsolete
+            }
+
             return await (base.SendAsync(message, restTimeout, externalCancellationToken).ConfigureAwait(false));
         }
     }

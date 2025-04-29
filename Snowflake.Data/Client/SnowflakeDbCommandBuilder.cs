@@ -1,7 +1,3 @@
-﻿/*
- * Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.
- */
-
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
@@ -10,6 +6,9 @@ namespace Snowflake.Data.Client
 {
     public class SnowflakeDbCommandBuilder : DbCommandBuilder
     {
+        public const string DEFAULT_QUOTE_PREFIX = "\"";
+        public const string DEFAULT_QUOTE_SUFFIX = "\"";
+
         /// <summary>
         /// Initializes a new instance of the <see cref="SnowflakeDbCommandBuilder"/> class.
         /// </summary>
@@ -25,8 +24,8 @@ namespace Snowflake.Data.Client
         public SnowflakeDbCommandBuilder(SnowflakeDbDataAdapter adapter)
         {
             DataAdapter = adapter;
-            QuotePrefix = "\"";
-            QuoteSuffix = "\"";
+            QuotePrefix = DEFAULT_QUOTE_PREFIX;
+            QuoteSuffix = DEFAULT_QUOTE_SUFFIX;
         }
         
         /// <summary>
@@ -41,8 +40,7 @@ namespace Snowflake.Data.Client
         public sealed override string QuotePrefix
         {
             get => base.QuotePrefix;
-            // TODO: Why should it be possible to remove the QuotePrefix?
-            set => base.QuotePrefix = string.IsNullOrEmpty(value) ? value : "\"";
+            set => base.QuotePrefix = string.IsNullOrEmpty(value) ? DEFAULT_QUOTE_PREFIX : value;
         }
 
         /// <summary>
@@ -57,8 +55,7 @@ namespace Snowflake.Data.Client
         public sealed override string QuoteSuffix
         {
             get => base.QuoteSuffix;
-            // TODO: Why should it be possible to remove the QuoteSuffix?
-            set => base.QuoteSuffix = string.IsNullOrEmpty(value) ? value : "\"";
+            set => base.QuoteSuffix = string.IsNullOrEmpty(value) ? DEFAULT_QUOTE_SUFFIX : value;
         }
 
         /// <summary>

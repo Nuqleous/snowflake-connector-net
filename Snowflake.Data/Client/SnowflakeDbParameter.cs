@@ -1,7 +1,3 @@
-﻿/*
- * Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.
- */
-
 using System.Data.Common;
 using System;
 using System.Data;
@@ -14,6 +10,8 @@ namespace Snowflake.Data.Client
         public SFDataType SFDataType { get; set; }
 
         private SFDataType OriginType;
+
+        private DbType _dbType;
 
         public SnowflakeDbParameter()
         {
@@ -34,7 +32,28 @@ namespace Snowflake.Data.Client
             this.SFDataType = SFDataType;
         }
 
-        public override DbType DbType { get; set; }
+        public override DbType DbType
+        {
+            get
+            {
+                if (_dbType != default(DbType) || Value == null || Value is DBNull)
+                {
+                    return _dbType;
+                }
+
+                var type = Value.GetType();
+                if (type.IsArray && type != typeof(byte[]))
+                {
+                    return SFDataConverter.TypeToDbTypeMap[type.GetElementType()];
+                }
+                else
+                {
+                    return SFDataConverter.TypeToDbTypeMap[type];
+                }
+            }
+
+            set => _dbType = value;
+        }
 
         public override ParameterDirection Direction
         {

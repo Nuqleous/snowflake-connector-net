@@ -1,17 +1,14 @@
-﻿/*
- * Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.
- */
-
 using Snowflake.Data.Core.FileTransfer.StorageClient;
 using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Snowflake.Data.Core.Tools;
 
 namespace Snowflake.Data.Core.FileTransfer
 {
     /// <summary>
-    /// The class containing file header information. 
+    /// The class containing file header information.
     /// </summary>
     internal class FileHeader
     {
@@ -21,23 +18,23 @@ namespace Snowflake.Data.Core.FileTransfer
     }
 
     /// <summary>
-    /// The interface for the storage clients. 
+    /// The interface for the storage clients.
     /// </summary>
     class SFRemoteStorageUtil
     {
         /// <summary>
-        /// Strings to indicate specific storage type. 
+        /// Strings to indicate specific storage type.
         /// </summary>
         public const string AZURE_FS = "AZURE";
         public const string LOCAL_FS = "LOCAL_FS";
 
         /// <summary>
-        /// Amount of concurrency to use by default. 
+        /// Amount of concurrency to use by default.
         /// </summary>
         const int DEFAULT_CONCURRENCY = 1;
 
         /// <summary>
-        /// Maximum amount of times to retry. 
+        /// Maximum amount of times to retry.
         /// </summary>
         const int DEFAULT_MAX_RETRY = 5;
 
@@ -73,54 +70,57 @@ namespace Snowflake.Data.Core.FileTransfer
         internal static void UploadOneFile(SFFileMetadata fileMetadata)
         {
             SFEncryptionMetadata encryptionMetadata = new SFEncryptionMetadata();
-            byte[] fileBytes = GetFileBytes(fileMetadata, encryptionMetadata);
-            
-            int maxConcurrency = fileMetadata.parallel;
-            int maxRetry = DEFAULT_MAX_RETRY;
-            Exception lastErr = null;
-
-            // Attempt to upload and retry if fails
-            for (int retry = 0; retry < maxRetry; retry++)
+            using (var fileBytesStreamPair = GetFileBytesStream(fileMetadata, encryptionMetadata))
             {
-                ISFRemoteStorageClient client = fileMetadata.client;
 
-                if (!fileMetadata.overwrite)
+                int maxConcurrency = fileMetadata.parallel;
+                int maxRetry = DEFAULT_MAX_RETRY;
+                Exception lastErr = null;
+
+                // Attempt to upload and retry if fails
+                for (int retry = 0; retry < maxRetry; retry++)
                 {
-                    // Get the file metadata
-                    FileHeader fileHeader = client.GetFileHeader(fileMetadata);
-                    if (fileHeader != null &&
-                        fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString())
+                    ISFRemoteStorageClient client = fileMetadata.client;
+
+                    if (!fileMetadata.overwrite)
                     {
-                        // File already exists
-                        fileMetadata.destFileSize = 0;
-                        fileMetadata.resultStatus = ResultStatus.SKIPPED.ToString();
+                        // Get the file metadata
+                        FileHeader fileHeader = client.GetFileHeader(fileMetadata);
+                        if (fileHeader != null &&
+                            fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString())
+                        {
+                            // File already exists
+                            fileMetadata.destFileSize = 0;
+                            fileMetadata.resultStatus = ResultStatus.SKIPPED.ToString();
+                            return;
+                        }
+                    }
+
+                    if (fileMetadata.overwrite || fileMetadata.resultStatus == ResultStatus.NOT_FOUND_FILE.ToString())
+                    {
+                        // Upload the file
+                        client.UploadFile(fileMetadata, fileBytesStreamPair.MainStream, encryptionMetadata);
+                    }
+
+                    if (fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString() ||
+                        fileMetadata.resultStatus == ResultStatus.RENEW_TOKEN.ToString() ||
+                        fileMetadata.resultStatus == ResultStatus.RENEW_PRESIGNED_URL.ToString())
+                    {
                         return;
                     }
+
+                    HandleUploadResult(ref fileMetadata, ref maxConcurrency, ref lastErr, retry, maxRetry);
                 }
 
-                if (fileMetadata.overwrite || fileMetadata.resultStatus == ResultStatus.NOT_FOUND_FILE.ToString())
+                if (lastErr != null)
                 {
-                    // Upload the file
-                    client.UploadFile(fileMetadata, fileBytes, encryptionMetadata);
+                    throw lastErr;
                 }
-
-                if (fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString() ||
-                    fileMetadata.resultStatus == ResultStatus.RENEW_TOKEN.ToString() ||
-                    fileMetadata.resultStatus == ResultStatus.RENEW_PRESIGNED_URL.ToString())
+                else
                 {
-                    return;
+                    string msg = "Unknown Error in uploading a file: " + fileMetadata.destFileName;
+                    throw new Exception(msg);
                 }
-                
-                HandleUploadResult(ref fileMetadata, ref maxConcurrency, ref lastErr, retry, maxRetry);
-            }
-            if (lastErr != null)
-            {
-                throw lastErr;
-            }
-            else
-            {
-                string msg = "Unknown Error in uploading a file: " + fileMetadata.destFileName;
-                throw new Exception(msg);
             }
         }
 
@@ -132,54 +132,60 @@ namespace Snowflake.Data.Core.FileTransfer
         internal static async Task UploadOneFileAsync(SFFileMetadata fileMetadata, CancellationToken cancellationToken)
         {
             SFEncryptionMetadata encryptionMetadata = new SFEncryptionMetadata();
-            byte[] fileBytes = GetFileBytes(fileMetadata, encryptionMetadata);
-
-            int maxConcurrency = fileMetadata.parallel;
-            int maxRetry = DEFAULT_MAX_RETRY;
-            Exception lastErr = null;
-
-            // Attempt to upload and retry if fails
-            for (int retry = 0; retry < maxRetry; retry++)
+            using (var fileBytesStreamPair = GetFileBytesStream(fileMetadata, encryptionMetadata))
             {
-                ISFRemoteStorageClient client = fileMetadata.client;
 
-                if (!fileMetadata.overwrite)
+                int maxConcurrency = fileMetadata.parallel;
+                int maxRetry = DEFAULT_MAX_RETRY;
+                Exception lastErr = null;
+
+                // Attempt to upload and retry if fails
+                for (int retry = 0; retry < maxRetry; retry++)
                 {
-                    // Get the file metadata
-                    FileHeader fileHeader = await client.GetFileHeaderAsync(fileMetadata, cancellationToken).ConfigureAwait(false);
-                    if (fileHeader != null &&
-                        fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString())
+                    ISFRemoteStorageClient client = fileMetadata.client;
+
+                    if (!fileMetadata.overwrite)
                     {
-                        // File already exists
-                        fileMetadata.destFileSize = 0;
-                        fileMetadata.resultStatus = ResultStatus.SKIPPED.ToString();
+                        // Get the file metadata
+                        FileHeader fileHeader = await client.GetFileHeaderAsync(fileMetadata, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (fileHeader != null &&
+                            fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString())
+                        {
+                            // File already exists
+                            fileMetadata.destFileSize = 0;
+                            fileMetadata.resultStatus = ResultStatus.SKIPPED.ToString();
+                            return;
+                        }
+                    }
+
+                    if (fileMetadata.overwrite || fileMetadata.resultStatus == ResultStatus.NOT_FOUND_FILE.ToString())
+                    {
+                        // Upload the file
+                        await client
+                            .UploadFileAsync(fileMetadata, fileBytesStreamPair.MainStream, encryptionMetadata, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    if (fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString() ||
+                        fileMetadata.resultStatus == ResultStatus.RENEW_TOKEN.ToString() ||
+                        fileMetadata.resultStatus == ResultStatus.RENEW_PRESIGNED_URL.ToString())
+                    {
                         return;
                     }
+
+                    HandleUploadResult(ref fileMetadata, ref maxConcurrency, ref lastErr, retry, maxRetry);
                 }
 
-                if (fileMetadata.overwrite || fileMetadata.resultStatus == ResultStatus.NOT_FOUND_FILE.ToString())
+                if (lastErr != null)
                 {
-                    // Upload the file
-                    await client.UploadFileAsync(fileMetadata, fileBytes, encryptionMetadata, cancellationToken).ConfigureAwait(false);
+                    throw lastErr;
                 }
-
-                if (fileMetadata.resultStatus == ResultStatus.UPLOADED.ToString() ||
-                    fileMetadata.resultStatus == ResultStatus.RENEW_TOKEN.ToString() ||
-                    fileMetadata.resultStatus == ResultStatus.RENEW_PRESIGNED_URL.ToString())
+                else
                 {
-                    return;
+                    string msg = "Unknown Error in uploading a file: " + fileMetadata.destFileName;
+                    throw new Exception(msg);
                 }
-                
-                HandleUploadResult(ref fileMetadata, ref maxConcurrency, ref lastErr, retry, maxRetry);
-            }
-            if (lastErr != null)
-            {
-                throw lastErr;
-            }
-            else
-            {
-                string msg = "Unknown Error in uploading a file: " + fileMetadata.destFileName;
-                throw new Exception(msg);
             }
         }
 
@@ -289,7 +295,6 @@ namespace Snowflake.Data.Core.FileTransfer
         /// <summary>
         /// Download one file.
         /// </summary>
-        /// <summary>
         /// <param name="fileMetadata">The file metadata of the file to download</param>
         internal static void DownloadOneFile(SFFileMetadata fileMetadata)
         {
@@ -299,7 +304,7 @@ namespace Snowflake.Data.Core.FileTransfer
             // Check local location exists
             if (!Directory.Exists(fileMetadata.localLocation))
             {
-                Directory.CreateDirectory(fileMetadata.localLocation);
+                DirectoryOperations.Instance.CreateDirectory(fileMetadata.localLocation);
             }
 
             ISFRemoteStorageClient client = fileMetadata.client;
@@ -338,20 +343,20 @@ namespace Snowflake.Data.Core.FileTransfer
                         string tmpDstName = EncryptionProvider.DecryptFile(
                           fullDstPath,
                           fileMetadata.encryptionMaterial,
-                          encryptionMetadata
-                          );
+                          encryptionMetadata,
+                          FileTransferConfiguration.FromFileMetadata(fileMetadata));
 
-                        File.Delete(fullDstPath);
-
-                        // Copy decrypted tmp file to target destination path
-                        File.Copy(tmpDstName, fullDstPath);
-
-                        // Delete tmp file
+                        FileOperations.Instance.CopyFile(tmpDstName, fullDstPath);
                         File.Delete(tmpDstName);
                     }
 
                     FileInfo fileInfo = new FileInfo(fullDstPath);
                     fileMetadata.destFileSize = fileInfo.Length;
+                    return;
+                }
+                else if (fileMetadata.resultStatus == ResultStatus.RENEW_TOKEN.ToString() ||
+                    fileMetadata.resultStatus == ResultStatus.RENEW_PRESIGNED_URL.ToString())
+                {
                     return;
                 }
                 else
@@ -366,7 +371,7 @@ namespace Snowflake.Data.Core.FileTransfer
             else
             {
                 var msg = "Unknown Error in downloading a file: " + fileMetadata.destFileName;
-                throw lastErr;
+                throw new Exception(msg);
             }
         }
 
@@ -383,16 +388,10 @@ namespace Snowflake.Data.Core.FileTransfer
             // Check local location exists
             if (!Directory.Exists(fileMetadata.localLocation))
             {
-                Directory.CreateDirectory(fileMetadata.localLocation);
+                DirectoryOperations.Instance.CreateDirectory(fileMetadata.localLocation);
             }
 
             ISFRemoteStorageClient client = fileMetadata.client;
-            FileHeader fileHeader = await client.GetFileHeaderAsync(fileMetadata, cancellationToken).ConfigureAwait(false);
-
-            if (fileHeader != null)
-            {
-                fileMetadata.srcFileSize = fileHeader.contentLength;
-            }
 
             int maxConcurrency = fileMetadata.parallel;
             Exception lastErr = null;
@@ -417,28 +416,31 @@ namespace Snowflake.Data.Core.FileTransfer
                           * One example of this is the utils that use presigned url
                           * for upload / download and not the storage client library.
                           **/
+                        FileHeader fileHeader = null;
                         if (fileMetadata.presignedUrl != null)
                         {
                             fileHeader = await client.GetFileHeaderAsync(fileMetadata, cancellationToken).ConfigureAwait(false);
                         }
 
+                        SFEncryptionMetadata encryptionMetadata = fileHeader != null ? fileHeader.encryptionMetadata : fileMetadata.encryptionMetadata;
+
                         string tmpDstName = EncryptionProvider.DecryptFile(
                           fullDstPath,
                           fileMetadata.encryptionMaterial,
-                          fileHeader.encryptionMetadata
-                          );
+                          encryptionMetadata,
+                          FileTransferConfiguration.FromFileMetadata(fileMetadata));
 
-                        File.Delete(fullDstPath);
-
-                        // Copy decrypted tmp file to target destination path
-                        File.Copy(tmpDstName, fullDstPath);
-
-                        // Delete tmp file
+                        FileOperations.Instance.CopyFile(tmpDstName, fullDstPath);
                         File.Delete(tmpDstName);
                     }
 
                     FileInfo fileInfo = new FileInfo(fullDstPath);
                     fileMetadata.destFileSize = fileInfo.Length;
+                    return;
+                }
+                else if (fileMetadata.resultStatus == ResultStatus.RENEW_TOKEN.ToString() ||
+                    fileMetadata.resultStatus == ResultStatus.RENEW_PRESIGNED_URL.ToString())
+                {
                     return;
                 }
                 else
@@ -453,7 +455,7 @@ namespace Snowflake.Data.Core.FileTransfer
             else
             {
                 var msg = "Unknown Error in downloading a file: " + fileMetadata.destFileName;
-                throw lastErr;
+                throw new Exception(msg);
             }
         }
 
@@ -467,12 +469,7 @@ namespace Snowflake.Data.Core.FileTransfer
         /// <param name="maxRetry">The max retry</param>
         private static void HandleDownloadFileErr(ref SFFileMetadata fileMetadata, ref int maxConcurrency, ref Exception lastErr, int retry, int maxRetry)
         {
-            if (fileMetadata.resultStatus == ResultStatus.RENEW_TOKEN.ToString() ||
-                    fileMetadata.resultStatus == ResultStatus.RENEW_PRESIGNED_URL.ToString())
-            {
-                return;
-            }
-            else if (fileMetadata.resultStatus == ResultStatus.NEED_RETRY_WITH_LOWER_CONCURRENCY.ToString())
+            if (fileMetadata.resultStatus == ResultStatus.NEED_RETRY_WITH_LOWER_CONCURRENCY.ToString())
             {
                 lastErr = fileMetadata.lastError;
                 // Failed to download file, retrying with max concurrency
@@ -492,39 +489,39 @@ namespace Snowflake.Data.Core.FileTransfer
             }
         }
 
-        private static byte[] GetFileBytes(SFFileMetadata fileMetadata, SFEncryptionMetadata encryptionMetadata)
+        private static StreamPair GetFileBytesStream(SFFileMetadata fileMetadata, SFEncryptionMetadata encryptionMetadata)
         {
-            byte[] fileBytes;
             // If encryption enabled, encrypt the file to be uploaded
             if (fileMetadata.encryptionMaterial != null)
             {
                 if (fileMetadata.memoryStream != null)
                 {
-                    fileBytes = EncryptionProvider.EncryptStream(
-                       fileMetadata.memoryStream,
-                       fileMetadata.encryptionMaterial,
-                       encryptionMetadata);
+                    return EncryptionProvider.EncryptStream(
+                        fileMetadata.memoryStream,
+                        fileMetadata.encryptionMaterial,
+                        encryptionMetadata,
+                        FileTransferConfiguration.FromFileMetadata(fileMetadata));
                 }
                 else
                 {
-                    fileBytes = EncryptionProvider.EncryptFile(
+                    return EncryptionProvider.EncryptFile(
                         fileMetadata.realSrcFilePath,
                         fileMetadata.encryptionMaterial,
-                        encryptionMetadata);
+                        encryptionMetadata,
+                        FileTransferConfiguration.FromFileMetadata(fileMetadata));
                 }
             }
             else
             {
                 if (fileMetadata.memoryStream != null)
                 {
-                    fileBytes = fileMetadata.memoryStream.ToArray();
+                    return new StreamPair { MainStream = fileMetadata.memoryStream };
                 }
                 else
                 {
-                    fileBytes = File.ReadAllBytes(fileMetadata.realSrcFilePath);
+                    return new StreamPair { MainStream = File.OpenRead(fileMetadata.realSrcFilePath) };
                 }
             }
-            return fileBytes;
         }
     }
 }

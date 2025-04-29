@@ -1,7 +1,3 @@
-﻿/*
- * Copyright (c) 2012-2019 Snowflake Computing Inc. All rights reserved.
- */
-
 using Snowflake.Data.Core;
 using Snowflake.Data.Core.Authenticator;
 using System.Net.Http;
@@ -15,7 +11,9 @@ namespace Snowflake.Data.Tests.Mock
     {
         public string TokenUrl { get; set; }
         public string SSOUrl { get; set; }
-        public StringContent ResponseContent { get; set; }
+        public string ResponseContent { get; set; }
+        public int MaxRetryCount { get; set; }
+        public int MaxRetryTimeout { get; set; }
 
         public T Get<T>(IRestRequest request)
         {
@@ -30,7 +28,9 @@ namespace Snowflake.Data.Tests.Mock
         public Task<HttpResponseMessage> GetAsync(IRestRequest request, CancellationToken cancellationToken)
         {
             var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
-            response.Content = ResponseContent;
+            response.Content = new StringContent(ResponseContent);
+            response.Content.Headers.Add(OktaAuthenticator.RetryCountHeader, MaxRetryCount.ToString());
+            response.Content.Headers.Add(OktaAuthenticator.TimeoutElapsedHeader, MaxRetryTimeout.ToString());
             return Task.FromResult(response);
         }
 
@@ -43,18 +43,45 @@ namespace Snowflake.Data.Tests.Mock
         {
             if (postRequest is SFRestRequest)
             {
-                // authenticator
-                var authnResponse = new AuthenticatorResponse 
+                if (((SFRestRequest)postRequest).jsonBody is AuthenticatorRequest)
                 {
-                    success = true,
-                    data = new AuthenticatorResponseData 
+                    // authenticator
+                    var authnResponse = new AuthenticatorResponse
                     {
-                        tokenUrl = TokenUrl,
-                        ssoUrl = SSOUrl,
-                    }
-                };
+                        success = true,
+                        data = new AuthenticatorResponseData
+                        {
+                            tokenUrl = TokenUrl,
+                            ssoUrl = SSOUrl,
+                        }
+                    };
 
-                return Task.FromResult<T>((T)(object)authnResponse);
+                    return Task.FromResult<T>((T)(object)authnResponse);
+                }
+                else
+                {
+                    // login
+                    var loginResponse = new LoginResponse
+                    {
+                        success = true,
+                        data = new LoginResponseData
+                        {
+                            sessionId = "",
+                            token = "",
+                            masterToken = "",
+                            masterValidityInSeconds = 0,
+                            authResponseSessionInfo = new SessionInfo
+                            {
+                                databaseName = "",
+                                schemaName = "",
+                                roleName = "",
+                                warehouseName = "",
+                            }
+                        }
+                    };
+
+                    return Task.FromResult<T>((T)(object)loginResponse);
+                }
             }
             else
             {
